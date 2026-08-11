@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>立绘去白底工具 — 边缘洪水填充 (Flood Fill)</title>
+<style>
+  :root { --bg: #1a1a2e; --card: #16213e; --accent: #0f3460; --text: #e0e0e0; --highlight: #e94560; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; min-height:100vh; display:flex; }
+  .sidebar { width:320px; background:var(--card); padding:24px; display:flex; flex-direction:column; gap:20px; border-right:1px solid rgba(255,255,255,0.08); flex-shrink:0; overflow-y:auto; }
+  .sidebar h1 { font-size:1.3rem; color:#fff; }
+  .sidebar p  { font-size:0.82rem; color:rgba(255,255,255,0.55); line-height:1.5; }
+  .main { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:32px; }
+  .drop-zone {
+    width:100%; max-width:700px; min-height:200px;
+    border:2px dashed rgba(255,255,255,0.2); border-radius:12px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:12px; cursor:pointer; transition:border-color 0.2s;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color:var(--highlight); }
+  .drop-zone span { font-size:0.9rem; color:rgba(255,255,255,0.4); }
+  input[type=file] { display:none; }
+  .preview-row { display:flex; gap:24px; width:100%; max-width:1100px; flex-wrap:wrap; justify-content:center; }
+  .preview-card { background:var(--card); border-radius:12px; padding:16px; text-align:center; min-width:280px; flex:1; max-width:500px; }
+  .preview-card h3 { font-size:0.85rem; margin-bottom:10px; color:rgba(255,255,255,0.7); }
+  .checkerboard { background-image:linear-gradient(45deg,#333 25%,transparent 25%,transparent 75%,#333 75%,#333),linear-gradient(45deg,#333 25%,transparent 25%,transparent 75%,#333 75%,#333); background-size:20px 20px; background-position:0 0,10px 10px; border-radius:8px; overflow:hidden; display:inline-block; }
+  .checkerboard img { display:block; max-width:100%; max-height:420px; object-fit:contain; }
+  .btn { padding:10px 22px; border:none; border-radius:8px; cursor:pointer; font-size:0.9rem; font-weight:600; transition:background 0.15s,transform 0.1s; }
+  .btn:active { transform:scale(0.97); }
+  .btn-primary { background:var(--highlight); color:#fff; }
+  .btn-primary:hover { background:#ff5a7a; }
+  .btn-secondary { background:var(--accent); color:#fff; }
+  .btn-secondary:hover { background:#1a4a80; }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+  .info-row { display:flex; gap:8px; align-items:center; font-size:0.8rem; color:rgba(255,255,255,0.4); }
+  .info-row strong { color:rgba(255,255,255,0.7); }
+  .slider-group { display:flex; flex-direction:column; gap:4px; }
+  .slider-group label { font-size:0.78rem; color:rgba(255,255,255,0.6); display:flex; justify-content:space-between; }
+  .slider-group input[type=range] { width:100%; accent-color:var(--highlight); }
+  .algo-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; background:#e94560; color:#fff; margin-left:4px; vertical-align:middle; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h1>🧼 立绘去白底工具
+    <span class="algo-badge">Flood Fill</span>
+  </h1>
+  <p>边缘洪水填充：从四角采样背景色，仅剥离<strong>与图片边缘相连</strong>的白色区域。角色身上的白色（如白裙子、白衬衫）不受影响。</p>
+
+  <div class="slider-group">
+    <label>颜色容差 <span id="val-tolerance">40</span></label>
+    <input type="range" id="slider-tolerance" min="10" max="80" step="2" value="40">
+    <span style="font-size:0.7rem;color:rgba(255,255,255,0.3);">越大去底越激进，初始值 40 适合纯白背景</span>
+  </div>
+
+  <div class="slider-group">
+    <label>对比度增强 <span id="val-contrast">1.05</span></label>
+    <input type="range" id="slider-contrast" min="1.00" max="1.30" step="0.01" value="1.05">
+    <span style="font-size:0.7rem;color:rgba(255,255,255,0.3);">轻微增强，帮助分离近白色边缘</span>
+  </div>
+
+  <div class="slider-group">
+    <label>角采样尺寸 <span id="val-corner">8</span>px</label>
+    <input type="range" id="slider-corner" min="3" max="20" step="1" value="8">
+    <span style="font-size:0.7rem;color:rgba(255,255,255,0.3);">从四角采样的像素区域大小</span>
+  </div>
+
+  <div class="info-row" style="margin-top:4px;">
+    <span>背景占比: <strong id="info-bg-percent">—</strong></span>
+  </div>
+  <div class="info-row">
+    <span>背景色: <strong id="info-bg-color">—</strong></span>
+  </div>
+
+  <button class="btn btn-primary" id="btn-process" disabled>⚡ 执行去底</button>
+  <button class="btn btn-secondary" id="btn-download" disabled>⬇ 下载 PNG</button>
+  <button class="btn btn-secondary" id="btn-reset">↺ 重置</button>
+
+  <button class="btn btn-secondary" id="btn-batch" style="display:none;">📦 批量处理 (已加载目录)</button>
+
+  <p style="margin-top:auto;font-size:0.7rem;color:rgba(255,255,255,0.25);">
+    算法：Flood Fill (BFS 4-directional)<br>
+    切比雪夫颜色距离 ≤ 容差<br>
+    只去掉与边缘连通的背景区域
+  </p>
+</div>
+
+<div class="main">
+  <div class="drop-zone" id="drop-zone">
+    <span style="font-size:2rem;">📁</span>
+    <span>拖拽图片到此处，或点击选择文件</span>
+    <span style="font-size:0.75rem;">支持 JPG / PNG — 算法仅剥离边缘连通的白色背景</span>
+  </div>
+  <input type="file" id="file-input" accept="image/jpeg,image/png">
+
+  <div class="preview-row">
+    <div class="preview-card">
+      <h3>📷 原图</h3>
+      <div class="checkerboard" id="original-wrapper">
+        <img id="preview-original" alt="原图" style="display:none;">
+        <span id="placeholder-original" style="padding:60px 40px;display:block;color:rgba(255,255,255,0.2);">等待上传…</span>
+      </div>
+    </div>
+    <div class="preview-card">
+      <h3>✨ 去底后（灰白棋盘 = 透明区域）</h3>
+      <div class="checkerboard" id="processed-wrapper">
+        <img id="preview-processed" alt="处理后" style="display:none;">
+        <span id="placeholder-processed" style="padding:60px 40px;display:block;color:rgba(255,255,255,0.2);">点击「执行去底」…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 遮罩调试视图 -->
+  <div class="preview-row" id="mask-row" style="display:none;">
+    <div class="preview-card">
+      <h3>🔍 洪水填充遮罩 (红色 = 已标记为背景)</h3>
+      <div class="checkerboard" id="mask-wrapper">
+        <img id="preview-mask" alt="遮罩" style="display:none;">
+        <span id="placeholder-mask" style="padding:60px 40px;display:block;color:rgba(255,255,255,0.2);">处理后自动生成…</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-row" id="status-bar" style="display:none;">
+    <span id="status-text"></span>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── DOM 引用 ──
+  var $ = function(id) { return document.getElementById(id); };
+  var dropZone   = $('drop-zone');
+  var fileInput  = $('file-input');
+  var btnProcess = $('btn-process');
+  var btnDownload= $('btn-download');
+  var btnReset   = $('btn-reset');
+  var previewOrig   = $('preview-original');
+  var previewProc   = $('preview-processed');
+  var previewMask   = $('preview-mask');
+  var placeholderOrig = $('placeholder-original');
+  var placeholderProc = $('placeholder-processed');
+  var placeholderMask = $('placeholder-mask');
+  var maskRow      = $('mask-row');
+  var statusBar    = $('status-bar');
+  var statusText   = $('status-text');
+
+  var sliderTolerance = $('slider-tolerance');
+  var sliderContrast  = $('slider-contrast');
+  var sliderCorner    = $('slider-corner');
+
+  var sourceImage = null;   // 原始 HTMLImageElement
+  var processedURL = null;  // 处理后的 dataURL
+  var maskURL      = null;  // 遮罩预览 dataURL
+
+  // ── 滑块联动 ──
+  function updateSliderLabels() {
+    var tol = parseInt(sliderTolerance.value, 10);
+    var con = parseFloat(sliderContrast.value);
+    var cor = parseInt(sliderCorner.value, 10);
+    $('val-tolerance').textContent = tol;
+    $('val-contrast').textContent = con.toFixed(2);
+    $('val-corner').textContent = cor;
+  }
+  sliderTolerance.addEventListener('input', updateSliderLabels);
+  sliderContrast.addEventListener('input', updateSliderLabels);
+  sliderCorner.addEventListener('input', updateSliderLabels);
+
+  // ── 文件加载 ──
+  function loadImage(file) {
+    if (!file || !file.type.match(/image\/(jpeg|png)/)) {
+      alert('请选择 JPG 或 PNG 图片');
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onload = function() {
+        sourceImage = img;
+        previewOrig.src = e.target.result;
+        previewOrig.style.display = 'block';
+        placeholderOrig.style.display = 'none';
+        previewProc.style.display = 'none';
+        placeholderProc.style.display = 'block';
+        previewMask.style.display = 'none';
+        placeholderMask.style.display = 'block';
+        maskRow.style.display = 'none';
+        processedURL = null;
+        maskURL = null;
+        btnProcess.disabled = false;
+        btnDownload.disabled = true;
+        $('info-bg-percent').textContent = '—';
+        $('info-bg-color').textContent = '—';
+        status('已加载: ' + file.name + ' (' + img.naturalWidth + '×' + img.naturalHeight + ')');
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ── 拖拽事件 ──
+  dropZone.addEventListener('click', function() { fileInput.click(); });
+  fileInput.addEventListener('change', function() { if (fileInput.files[0]) loadImage(fileInput.files[0]); });
+  dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('drag-over'); });
+  dropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) loadImage(e.dataTransfer.files[0]);
+  });
+
+  // ── 状态 ──
+  function status(msg) {
+    statusBar.style.display = 'flex';
+    statusText.textContent = msg;
+  }
+
+  function clamp(v, lo, hi) {
+    return v < lo ? lo : v > hi ? hi : v;
+  }
+
+  /**
+   * ============================================================
+   * 核心算法：边缘洪水填充去白底 (Flood Fill from Edges)
+   * ============================================================
+   *
+   * 原理：
+   *   1. 从图片四个角采样背景参考色（中位数，抗噪）
+   *   2. 从所有边缘像素出发做 BFS 洪水填充
+   *   3. 只有"与边缘相连 且 颜色接近背景色"的像素被标记为透明
+   *   4. 角色身上的白色区域（连衣裙等）因不与边缘连通而被保护
+   *
+   * @param {HTMLImageElement} img  - 已加载的图片元素
+   * @param {number} tolerance       - 颜色容差 (切比雪夫距离)
+   * @param {number} contrast        - 对比度增强系数
+   * @param {number} cornerSize      - 四角采样区域尺寸
+   * @returns {{ dataURL: string, maskURL: string, bgPercent: string, bgColor: string }}
+   */
+  function removeWhiteBg(img, tolerance, contrast, cornerSize) {
+    tolerance  = tolerance  || 40;
+    contrast   = contrast   || 1.05;
+    cornerSize = cornerSize || 8;
+
+    var w = img.naturalWidth  || img.width;
+    var h = img.naturalHeight || img.height;
+    console.log('[Flood Fill] 图片尺寸: ' + w + '×' + h);
+    console.log('[Flood Fill] 参数: tolerance=' + tolerance + ', contrast=' + contrast.toFixed(2) + ', corner=' + cornerSize);
+
+    // 1. 绘制到 Canvas
+    var cvs = document.createElement('canvas');
+    cvs.width  = w;
+    cvs.height = h;
+    var ctx = cvs.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // 2. 获取像素数据
+    var imageData = ctx.getImageData(0, 0, w, h);
+    var data = imageData.data;
+    var totalPx = w * h;
+
+    // 3. 对比度增强预处理
+    for (var i = 0; i < data.length; i += 4) {
+      var r = data[i];
+      var g = data[i + 1];
+      var b = data[i + 2];
+      data[i]     = clamp(Math.round((r - 128) * contrast + 128), 0, 255);
+      data[i + 1] = clamp(Math.round((g - 128) * contrast + 128), 0, 255);
+      data[i + 2] = clamp(Math.round((b - 128) * contrast + 128), 0, 255);
+    }
+
+    // 4. 四角采样背景色
+    var samples = [];
+    var corners = [
+      [0, 0],
+      [w - cornerSize, 0],
+      [0, h - cornerSize],
+      [w - cornerSize, h - cornerSize]
+    ];
+
+    for (var ci = 0; ci < corners.length; ci++) {
+      var cx = corners[ci][0];
+      var cy = corners[ci][1];
+      for (var y = cy; y < cy + cornerSize && y < h; y++) {
+        for (var x = cx; x < cx + cornerSize && x < w; x++) {
+          var idx = (y * w + x) * 4;
+          samples.push({
+            r: data[idx],
+            g: data[idx + 1],
+            b: data[idx + 2]
+          });
+        }
+      }
+    }
+
+    // 按亮度排序取中位数
+    samples.sort(function(a, b) {
+      return (0.299 * a.r + 0.587 * a.g + 0.114 * a.b) -
+             (0.299 * b.r + 0.587 * b.g + 0.114 * b.b);
+    });
+    var bg = samples[Math.floor(samples.length / 2)];
+
+    console.log('[Flood Fill] 背景色: RGB(' + bg.r + ', ' + bg.g + ', ' + bg.b + ')');
+
+    // 5. BFS 洪水填充
+    var mask   = new Uint8Array(totalPx);  // 1 = 背景
+    var visited = new Uint8Array(totalPx);
+    var queue  = [];
+
+    function pixIdx(x, y) { return y * w + x; }
+
+    function isBg(x, y) {
+      var i = (y * w + x) * 4;
+      return Math.max(
+        Math.abs(data[i] - bg.r),
+        Math.abs(data[i + 1] - bg.g),
+        Math.abs(data[i + 2] - bg.b)
+      ) <= tolerance;
+    }
+
+    // 初始化队列：遍历四条边
+    for (var x = 0; x < w; x++) {
+      if (isBg(x, 0))          { var k0 = pixIdx(x, 0);          if (!visited[k0]) { visited[k0] = 1; queue.push([x, 0]); } }
+      if (isBg(x, h - 1))      { var k1 = pixIdx(x, h - 1);      if (!visited[k1]) { visited[k1] = 1; queue.push([x, h - 1]); } }
+    }
+    for (var y = 1; y < h - 1; y++) {
+      if (isBg(0, y))          { var kl = pixIdx(0, y);          if (!visited[kl]) { visited[kl] = 1; queue.push([0, y]); } }
+      if (isBg(w - 1, y))      { var kr = pixIdx(w - 1, y);      if (!visited[kr]) { visited[kr] = 1; queue.push([w - 1, y]); } }
+    }
+
+    console.log('[Flood Fill] BFS 起点: ' + queue.length + ' 个边缘像素');
+
+    var dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+    var head = 0;
+    while (head < queue.length) {
+      var cur = queue[head++];
+      var qx = cur[0], qy = cur[1];
+      mask[pixIdx(qx, qy)] = 1;
+
+      for (var d = 0; d < 4; d++) {
+        var nx = qx + dirs[d][0];
+        var ny = qy + dirs[d][1];
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        var nk = pixIdx(nx, ny);
+        if (visited[nk]) continue;
+        visited[nk] = 1;
+        if (isBg(nx, ny)) {
+          queue.push([nx, ny]);
+        }
+      }
+    }
+
+    // 6. 计算统计
+    var bgPixels = 0;
+    for (var mi = 0; mi < totalPx; mi++) { if (mask[mi] === 1) bgPixels++; }
+    var bgPercent = ((bgPixels / totalPx) * 100).toFixed(1);
+    console.log('[Flood Fill] 背景像素: ' + bgPixels + ' (' + bgPercent + '%)');
+
+    // 7. 应用 mask → Alpha=0
+    for (var mi2 = 0; mi2 < totalPx; mi2++) {
+      if (mask[mi2] === 1) {
+        data[mi2 * 4 + 3] = 0;
+      }
+    }
+    ctx.putImageData(imageData, 0, 0);
+
+    // 8. 生成遮罩预览图
+    var maskCvs = document.createElement('canvas');
+    maskCvs.width  = w;
+    maskCvs.height = h;
+    var maskCtx = maskCvs.getContext('2d');
+    var maskImageData = maskCtx.createImageData(w, h);
+    var maskData = maskImageData.data;
+    for (var mi3 = 0; mi3 < totalPx; mi3++) {
+      if (mask[mi3] === 1) {
+        maskData[mi3 * 4]     = 255;
+        maskData[mi3 * 4 + 1] = 0;
+        maskData[mi3 * 4 + 2] = 0;
+        maskData[mi3 * 4 + 3] = 180;
+      } else {
+        maskData[mi3 * 4 + 3] = 0;
+      }
+    }
+    maskCtx.putImageData(maskImageData, 0, 0);
+
+    console.log('[Flood Fill] 完成！白连衣裙等前景白色物体已被保护。');
+
+    return {
+      dataURL: cvs.toDataURL('image/png'),
+      maskURL: maskCvs.toDataURL('image/png'),
+      bgPercent: bgPercent,
+      bgColor: 'RGB(' + bg.r + ', ' + bg.g + ', ' + bg.b + ')'
+    };
+  }
+
+  // ── 执行处理 ──
+  btnProcess.addEventListener('click', function() {
+    if (!sourceImage) return;
+
+    var tolerance  = parseInt(sliderTolerance.value, 10);
+    var contrast   = parseFloat(sliderContrast.value);
+    var cornerSize = parseInt(sliderCorner.value, 10);
+
+    status('处理中…');
+    console.log('══════════════════════════════════════');
+    console.log('[Flood Fill] 开始处理…');
+
+    // 使用 setTimeout 避免阻塞 UI
+    setTimeout(function() {
+      var startTime = performance.now();
+      var result = removeWhiteBg(sourceImage, tolerance, contrast, cornerSize);
+      var elapsed = (performance.now() - startTime).toFixed(0);
+
+      processedURL = result.dataURL;
+      maskURL = result.maskURL;
+
+      previewProc.src = processedURL;
+      previewProc.style.display = 'block';
+      placeholderProc.style.display = 'none';
+
+      previewMask.src = maskURL;
+      previewMask.style.display = 'block';
+      placeholderMask.style.display = 'none';
+      maskRow.style.display = 'flex';
+
+      btnDownload.disabled = false;
+      $('info-bg-percent').textContent = result.bgPercent + '%';
+      $('info-bg-color').textContent = result.bgColor;
+
+      status('处理完成 (' + elapsed + 'ms) — 红色遮罩 = 已剥离的背景区域');
+    }, 50);
+  });
+
+  // ── 下载 ──
+  btnDownload.addEventListener('click', function() {
+    if (!processedURL) return;
+    var a = document.createElement('a');
+    a.href = processedURL;
+    a.download = 'sprite_no_bg.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    status('已下载 sprite_no_bg.png');
+  });
+
+  // ── 重置 ──
+  btnReset.addEventListener('click', function() {
+    sourceImage = null;
+    processedURL = null;
+    maskURL = null;
+    previewOrig.src = '';
+    previewOrig.style.display = 'none';
+    placeholderOrig.style.display = 'block';
+    previewProc.src = '';
+    previewProc.style.display = 'none';
+    placeholderProc.style.display = 'block';
+    previewMask.src = '';
+    previewMask.style.display = 'none';
+    placeholderMask.style.display = 'block';
+    maskRow.style.display = 'none';
+    btnProcess.disabled = true;
+    btnDownload.disabled = true;
+    fileInput.value = '';
+    statusBar.style.display = 'none';
+    $('info-bg-percent').textContent = '—';
+    $('info-bg-color').textContent = '—';
+    console.clear();
+  });
+
+  // ── 初始化：从 URL 参数加载 image/ 文件夹下的图片 ──
+  (function initFromQuery() {
+    var q = new URLSearchParams(window.location.search);
+    var file = q.get('file');
+    if (file) {
+      var img = new Image();
+      img.onload = function() {
+        sourceImage = img;
+        previewOrig.src = 'image/' + file;
+        previewOrig.style.display = 'block';
+        placeholderOrig.style.display = 'none';
+        btnProcess.disabled = false;
+        status('已加载: image/' + file + ' (' + img.naturalWidth + '×' + img.naturalHeight + ')');
+      };
+      img.onerror = function() {
+        console.warn('无法加载 image/' + file + '，请通过拖拽上传或确认文件存在');
+      };
+      img.src = 'image/' + file;
+    }
+  })();
+
+  updateSliderLabels();
+  console.log('💡 去底工具就绪 — 边缘洪水填充 (Flood Fill) 算法');
+  console.log('   用法：拖拽图片 / 点击选择 / ?file=normal.jpg 加载 image/ 目录文件');
+  console.log('   红色遮罩区域 = 被标记为背景（将变为透明），白色连衣裙等前景物体不受影响');
+})();
+</script>
+</body>
+</html>
