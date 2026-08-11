@@ -3,174 +3,520 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>立绘去白底工具 — 边缘洪水填充 (Flood Fill)</title>
+<title>立绘去白底工具 — Flood Fill + 边缘羽化</title>
 <style>
-  :root { --bg: #1a1a2e; --card: #16213e; --accent: #0f3460; --text: #e0e0e0; --highlight: #e94560; }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:var(--bg); color:var(--text); font-family:'Segoe UI',system-ui,sans-serif; min-height:100vh; display:flex; }
-  .sidebar { width:320px; background:var(--card); padding:24px; display:flex; flex-direction:column; gap:20px; border-right:1px solid rgba(255,255,255,0.08); flex-shrink:0; overflow-y:auto; }
-  .sidebar h1 { font-size:1.3rem; color:#fff; }
-  .sidebar p  { font-size:0.82rem; color:rgba(255,255,255,0.55); line-height:1.5; }
-  .main { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:32px; }
-  .drop-zone {
-    width:100%; max-width:700px; min-height:200px;
-    border:2px dashed rgba(255,255,255,0.2); border-radius:12px;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:12px; cursor:pointer; transition:border-color 0.2s;
+  :root {
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --accent-glow: rgba(99,102,241,0.30);
+    --green: #10b981;
+    --green-hover: #059669;
+    --green-glow: rgba(16,185,129,0.30);
+    --text: #1a1a2e;
+    --text-dim: #4a4a6a;
+    --text-soft: #7a7a96;
+    --panel-bg: rgba(0,0,0,0.0);
+    --radius-sm: 8px;
+    --radius: 14px;
+    --radius-lg: 20px;
   }
-  .drop-zone:hover, .drop-zone.drag-over { border-color:var(--highlight); }
-  .drop-zone span { font-size:0.9rem; color:rgba(255,255,255,0.4); }
-  input[type=file] { display:none; }
-  .preview-row { display:flex; gap:24px; width:100%; max-width:1100px; flex-wrap:wrap; justify-content:center; }
-  .preview-card { background:var(--card); border-radius:12px; padding:16px; text-align:center; min-width:280px; flex:1; max-width:500px; }
-  .preview-card h3 { font-size:0.85rem; margin-bottom:10px; color:rgba(255,255,255,0.7); }
-  .checkerboard { background-image:linear-gradient(45deg,#333 25%,transparent 25%,transparent 75%,#333 75%,#333),linear-gradient(45deg,#333 25%,transparent 25%,transparent 75%,#333 75%,#333); background-size:20px 20px; background-position:0 0,10px 10px; border-radius:8px; overflow:hidden; display:inline-block; }
-  .checkerboard img { display:block; max-width:100%; max-height:420px; object-fit:contain; }
-  .btn { padding:10px 22px; border:none; border-radius:8px; cursor:pointer; font-size:0.9rem; font-weight:600; transition:background 0.15s,transform 0.1s; }
-  .btn:active { transform:scale(0.97); }
-  .btn-primary { background:var(--highlight); color:#fff; }
-  .btn-primary:hover { background:#ff5a7a; }
-  .btn-secondary { background:var(--accent); color:#fff; }
-  .btn-secondary:hover { background:#1a4a80; }
-  .btn:disabled { opacity:0.4; cursor:not-allowed; }
-  .info-row { display:flex; gap:8px; align-items:center; font-size:0.8rem; color:rgba(255,255,255,0.4); }
-  .info-row strong { color:rgba(255,255,255,0.7); }
-  .slider-group { display:flex; flex-direction:column; gap:4px; }
-  .slider-group label { font-size:0.78rem; color:rgba(255,255,255,0.6); display:flex; justify-content:space-between; }
-  .slider-group input[type=range] { width:100%; accent-color:var(--highlight); }
-  .algo-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; background:#e94560; color:#fff; margin-left:4px; vertical-align:middle; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  /* ═══════════ Body — 全屏背景图 ═══════════ */
+  body {
+    background-image: url('./Image/bg.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 32px 20px 60px;
+    position: relative;
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system, sans-serif;
+    color: var(--text);
+  }
+
+  /* ═══════════ 主容器 — Glassmorphism 毛玻璃卡牌 ═══════════ */
+  .app-container {
+    position: relative;
+    z-index: 1;
+    max-width: 1120px;
+    width: 100%;
+    margin: 0 auto;
+    /* 纯白高不透明度 + 轻微毛玻璃，确保明亮通透 */
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    /* 多层阴影营造浮空感 */
+    box-shadow:
+      0 4px 8px rgba(0, 0, 0, 0.06),
+      0 12px 36px rgba(0, 0, 0, 0.10),
+      0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+    padding: 32px 34px 28px;
+    transition: box-shadow 0.3s;
+  }
+
+  /* ═══════════ 头部 ═══════════ */
+  .app-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .app-header h1 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #1a1a2e;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .app-header .badge {
+    font-size: 0.62rem;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 500;
+    letter-spacing: 0.6px;
+  }
+  .app-header + p {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 4px;
+  }
+  .app-header + p strong { color: var(--text); font-weight: 600; }
+
+  /* ═══════════ 主体两栏布局 ═══════════ */
+  .app-body {
+    display: grid;
+    grid-template-columns: 290px 1fr;
+    gap: 28px;
+    margin-top: 20px;
+  }
+
+  /* ═══════════ 左侧控制面板 ═══════════ */
+  .control-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* 滑块组 */
+  .slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .slider-group label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .slider-group label .val {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.95rem;
+    min-width: 32px;
+    text-align: right;
+  }
+  .slider-group .hint {
+    font-size: 0.7rem;
+    color: var(--text-soft);
+    line-height: 1.4;
+  }
+
+  /* ── 自定义滑块（跨浏览器） ── */
+  .slider-group input[type=range] {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(0,0,0,0.1);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+  .slider-group input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2.5px solid var(--accent);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    cursor: pointer;
+    transition: box-shadow 0.15s, transform 0.15s;
+  }
+  .slider-group input[type=range]::-webkit-slider-thumb:hover {
+    transform: scale(1.12);
+    box-shadow: 0 2px 14px var(--accent-glow);
+  }
+  .slider-group input[type=range]::-moz-range-thumb {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2.5px solid var(--accent);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    cursor: pointer;
+  }
+
+  /* 统计信息 */
+  .stats {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    padding: 12px 14px;
+    background: var(--panel-bg);
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(0,0,0,0.05);
+  }
+  .stats strong { color: var(--text); font-weight: 600; }
+
+  /* ═══════════ 按钮 ═══════════ */
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+  .btn {
+    padding: 11px 18px;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    transition: all 0.2s ease;
+    text-align: center;
+    outline: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn:active { transform: scale(0.96); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+  /* 执行去底 */
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 10px var(--accent-glow);
+    flex: 1;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    box-shadow: 0 4px 18px var(--accent-glow);
+    transform: translateY(-1px);
+  }
+
+  /* 下载 */
+  .btn-download {
+    background: var(--green);
+    color: #fff;
+    box-shadow: 0 2px 10px var(--green-glow);
+    width: 100%;
+  }
+  .btn-download:hover:not(:disabled) {
+    background: var(--green-hover);
+    box-shadow: 0 4px 18px var(--green-glow);
+    transform: translateY(-1px);
+  }
+
+  /* 重置 */
+  .btn-reset {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1.5px solid rgba(0,0,0,0.12);
+    width: 100%;
+  }
+  .btn-reset:hover {
+    background: rgba(0,0,0,0.04);
+    color: var(--text);
+    border-color: rgba(0,0,0,0.2);
+  }
+
+  /* ═══════════ 右侧预览区 ═══════════ */
+  .preview-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  /* 拖拽上传区 */
+  .drop-zone {
+    width: 100%;
+    min-height: 140px;
+    border: 2px dashed rgba(0,0,0,0.12);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    background: rgba(0,0,0,0.02);
+  }
+  .drop-zone:hover {
+    border-color: var(--accent);
+    background: rgba(99,102,241,0.05);
+    box-shadow: 0 0 0 4px rgba(99,102,241,0.05);
+  }
+  .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(99,102,241,0.10);
+    box-shadow: 0 0 0 8px rgba(99,102,241,0.06);
+    transform: scale(1.01);
+  }
+  .drop-zone .icon {
+    font-size: 2.2rem;
+    opacity: 0.45;
+    transition: opacity 0.2s;
+  }
+  .drop-zone:hover .icon { opacity: 0.7; }
+  .drop-zone span {
+    font-size: 0.84rem;
+    color: var(--text-dim);
+    pointer-events: none;
+  }
+  .drop-zone .sub {
+    font-size: 0.72rem;
+    color: var(--text-soft);
+  }
+
+  input[type=file] { display: none; }
+
+  /* 预览卡片行 */
+  .preview-row {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .preview-card {
+    background: rgba(0,0,0,0.025);
+    border-radius: var(--radius);
+    padding: 12px;
+    text-align: center;
+    flex: 1;
+    min-width: 220px;
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .preview-card h3 {
+    font-size: 0.78rem;
+    margin-bottom: 8px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  /* 棋盘格（展示透明区域） */
+  .checkerboard {
+    background-image:
+      linear-gradient(45deg, #d4d4d4 25%, transparent 25%, transparent 75%, #d4d4d4 75%, #d4d4d4),
+      linear-gradient(45deg, #d4d4d4 25%, transparent 25%, transparent 75%, #d4d4d4 75%, #d4d4d4);
+    background-size: 18px 18px;
+    background-position: 0 0, 9px 9px;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    display: inline-block;
+    background-color: #fff;
+  }
+  .checkerboard img {
+    display: block;
+    max-width: 100%;
+    max-height: 380px;
+    object-fit: contain;
+  }
+  .placeholder {
+    padding: 70px 40px;
+    display: block;
+    color: rgba(0,0,0,0.18);
+    font-size: 0.82rem;
+  }
+
+  /* 状态栏 */
+  .status-bar {
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    padding: 8px 16px;
+    border-radius: 20px;
+    background: rgba(99,102,241,0.06);
+    text-align: center;
+    margin-top: 4px;
+  }
+
+  /* ═══════════ 底部 ═══════════ */
+  .app-footer {
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    font-size: 0.68rem;
+    color: var(--text-soft);
+    line-height: 1.6;
+    text-align: center;
+  }
+
+  /* ═══════════ 基础 fallback ═══════════ */
+  html {
+    background: #e8e8f0;
+  }
+
+  /* ═══════════ 响应式 ═══════════ */
+  @media (max-width: 820px) {
+    body { padding: 12px; }
+    .app-container { padding: 20px 16px 18px; border-radius: var(--radius); }
+    .app-body {
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    .control-panel { gap: 14px; }
+    .preview-card { min-width: 140px; }
+    .checkerboard img { max-height: 260px; }
+    .placeholder { padding: 40px 30px; }
+  }
 </style>
 </head>
 <body>
 
-<div class="sidebar">
-  <h1>🧼 立绘去白底工具
-    <span class="algo-badge">Flood Fill</span>
-  </h1>
-  <p>边缘洪水填充：从四角采样背景色，仅剥离<strong>与图片边缘相连</strong>的白色区域。角色身上的白色（如白裙子、白衬衫）不受影响。</p>
+<!-- ═══════════ 毛玻璃主容器 ═══════════ -->
+<div class="app-container">
 
-  <div class="slider-group">
-    <label>颜色容差 <span id="val-tolerance">40</span></label>
-    <input type="range" id="slider-tolerance" min="10" max="80" step="2" value="40">
-    <span style="font-size:0.7rem;color:rgba(255,255,255,0.3);">越大去底越激进，初始值 40 适合纯白背景</span>
+  <!-- ── 头部 ── -->
+  <div class="app-header">
+    <h1>🧼 立绘去白底 <span class="badge">Flood Fill</span></h1>
   </div>
-
-  <div class="slider-group">
-    <label>对比度增强 <span id="val-contrast">1.05</span></label>
-    <input type="range" id="slider-contrast" min="1.00" max="1.30" step="0.01" value="1.05">
-    <span style="font-size:0.7rem;color:rgba(255,255,255,0.3);">轻微增强，帮助分离近白色边缘</span>
-  </div>
-
-  <div class="slider-group">
-    <label>角采样尺寸 <span id="val-corner">8</span>px</label>
-    <input type="range" id="slider-corner" min="3" max="20" step="1" value="8">
-    <span style="font-size:0.7rem;color:rgba(255,255,255,0.3);">从四角采样的像素区域大小</span>
-  </div>
-
-  <div class="info-row" style="margin-top:4px;">
-    <span>背景占比: <strong id="info-bg-percent">—</strong></span>
-  </div>
-  <div class="info-row">
-    <span>背景色: <strong id="info-bg-color">—</strong></span>
-  </div>
-
-  <button class="btn btn-primary" id="btn-process" disabled>⚡ 执行去底</button>
-  <button class="btn btn-secondary" id="btn-download" disabled>⬇ 下载 PNG</button>
-  <button class="btn btn-secondary" id="btn-reset">↺ 重置</button>
-
-  <button class="btn btn-secondary" id="btn-batch" style="display:none;">📦 批量处理 (已加载目录)</button>
-
-  <p style="margin-top:auto;font-size:0.7rem;color:rgba(255,255,255,0.25);">
-    算法：Flood Fill (BFS 4-directional)<br>
-    切比雪夫颜色距离 ≤ 容差<br>
-    只去掉与边缘连通的背景区域
+  <p>
+    从图片<strong>四角</strong>采样背景色，做连通域洪水填充。<br>
+    <strong>不与边缘相连的白色区域不会被误删</strong>（如白裙子、白皮肤）。
   </p>
-</div>
 
-<div class="main">
-  <div class="drop-zone" id="drop-zone">
-    <span style="font-size:2rem;">📁</span>
-    <span>拖拽图片到此处，或点击选择文件</span>
-    <span style="font-size:0.75rem;">支持 JPG / PNG — 算法仅剥离边缘连通的白色背景</span>
-  </div>
-  <input type="file" id="file-input" accept="image/jpeg,image/png">
+  <!-- ── 主体：控件 + 预览 ── -->
+  <div class="app-body">
 
-  <div class="preview-row">
-    <div class="preview-card">
-      <h3>📷 原图</h3>
-      <div class="checkerboard" id="original-wrapper">
-        <img id="preview-original" alt="原图" style="display:none;">
-        <span id="placeholder-original" style="padding:60px 40px;display:block;color:rgba(255,255,255,0.2);">等待上传…</span>
+    <!-- 左侧控制面板 -->
+    <div class="control-panel">
+      <div class="slider-group">
+        <label>连通域容差值 <span class="val" id="val-tolerance">25</span></label>
+        <input type="range" id="slider-tolerance" min="0" max="50" step="1" value="25">
+        <span class="hint">类似"魔棒容差"：值越大，越多的浅色区域被判为背景</span>
+      </div>
+
+      <div class="slider-group">
+        <label>边缘羽化像素 <span class="val" id="val-feather">3</span> px</label>
+        <input type="range" id="slider-feather" min="0" max="20" step="1" value="3">
+        <span class="hint">消除狗牙边缘与白色光晕，值越大过渡越柔和</span>
+      </div>
+
+      <div class="stats">
+        <span>背景色参考：<strong id="info-bg-color">—</strong></span>
+        <span>剥离占比：<strong id="info-bg-percent">—</strong></span>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-process" disabled>⚡ 执行去底</button>
+      </div>
+      <button class="btn btn-download" id="btn-download" disabled>⬇ 下载透明 PNG</button>
+      <button class="btn btn-reset" id="btn-reset">↺ 重置</button>
+    </div>
+
+    <!-- 右侧预览区 -->
+    <div class="preview-panel">
+      <div class="drop-zone" id="drop-zone">
+        <span class="icon">📁</span>
+        <span>拖拽立绘到此处，或点击选择文件</span>
+        <span class="sub">JPG / PNG · 只剥离与四角连通的背景区域</span>
+      </div>
+      <input type="file" id="file-input" accept="image/jpeg,image/png">
+
+      <div class="preview-row">
+        <div class="preview-card">
+          <h3>📷 原图</h3>
+          <div class="checkerboard">
+            <img id="preview-original" alt="原图" style="display:none;">
+            <span class="placeholder" id="ph-original">等待上传…</span>
+          </div>
+        </div>
+        <div class="preview-card">
+          <h3>✨ 去底后（灰白棋盘 = 透明）</h3>
+          <div class="checkerboard">
+            <img id="preview-processed" alt="去底结果" style="display:none;">
+            <span class="placeholder" id="ph-processed">点击「执行去底」…</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-bar" id="status-bar" style="display:none;">
+        <span id="status-text"></span>
       </div>
     </div>
-    <div class="preview-card">
-      <h3>✨ 去底后（灰白棋盘 = 透明区域）</h3>
-      <div class="checkerboard" id="processed-wrapper">
-        <img id="preview-processed" alt="处理后" style="display:none;">
-        <span id="placeholder-processed" style="padding:60px 40px;display:block;color:rgba(255,255,255,0.2);">点击「执行去底」…</span>
-      </div>
-    </div>
+
   </div>
 
-  <!-- 遮罩调试视图 -->
-  <div class="preview-row" id="mask-row" style="display:none;">
-    <div class="preview-card">
-      <h3>🔍 洪水填充遮罩 (红色 = 已标记为背景)</h3>
-      <div class="checkerboard" id="mask-wrapper">
-        <img id="preview-mask" alt="遮罩" style="display:none;">
-        <span id="placeholder-mask" style="padding:60px 40px;display:block;color:rgba(255,255,255,0.2);">处理后自动生成…</span>
-      </div>
-    </div>
+  <!-- ── 底部 ── -->
+  <div class="app-footer">
+    算法：四角采样 → BFS 洪水填充（4方向）→ 盒式模糊羽化<br>
+    RGB 欧氏距离 ≤ 容差 → 判定为背景连通域
   </div>
 
-  <div class="info-row" id="status-bar" style="display:none;">
-    <span id="status-text"></span>
-  </div>
 </div>
 
 <script>
 (function() {
   'use strict';
 
-  // ── DOM 引用 ──
+  // ═══════════ DOM 引用 ═══════════
   var $ = function(id) { return document.getElementById(id); };
-  var dropZone   = $('drop-zone');
-  var fileInput  = $('file-input');
-  var btnProcess = $('btn-process');
-  var btnDownload= $('btn-download');
-  var btnReset   = $('btn-reset');
-  var previewOrig   = $('preview-original');
-  var previewProc   = $('preview-processed');
-  var previewMask   = $('preview-mask');
-  var placeholderOrig = $('placeholder-original');
-  var placeholderProc = $('placeholder-processed');
-  var placeholderMask = $('placeholder-mask');
-  var maskRow      = $('mask-row');
-  var statusBar    = $('status-bar');
-  var statusText   = $('status-text');
 
-  var sliderTolerance = $('slider-tolerance');
-  var sliderContrast  = $('slider-contrast');
-  var sliderCorner    = $('slider-corner');
+  var dropZone    = $('drop-zone');
+  var fileInput   = $('file-input');
+  var btnProcess  = $('btn-process');
+  var btnDownload = $('btn-download');
+  var btnReset    = $('btn-reset');
 
-  var sourceImage = null;   // 原始 HTMLImageElement
-  var processedURL = null;  // 处理后的 dataURL
-  var maskURL      = null;  // 遮罩预览 dataURL
+  var previewOrig = $('preview-original');
+  var previewProc = $('preview-processed');
+  var phOrig      = $('ph-original');
+  var phProc      = $('ph-processed');
 
-  // ── 滑块联动 ──
-  function updateSliderLabels() {
-    var tol = parseInt(sliderTolerance.value, 10);
-    var con = parseFloat(sliderContrast.value);
-    var cor = parseInt(sliderCorner.value, 10);
-    $('val-tolerance').textContent = tol;
-    $('val-contrast').textContent = con.toFixed(2);
-    $('val-corner').textContent = cor;
+  var sliderTol   = $('slider-tolerance');
+  var sliderFeath = $('slider-feather');
+
+  var statusBar   = $('status-bar');
+  var statusText  = $('status-text');
+
+  var sourceImage = null;    // HTMLImageElement
+  var processedURL = null;   // 结果 dataURL
+
+  // ═══════════ 辅助函数 ═══════════
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+  function status(msg) {
+    statusBar.style.display = 'block';
+    statusText.textContent = msg;
   }
-  sliderTolerance.addEventListener('input', updateSliderLabels);
-  sliderContrast.addEventListener('input', updateSliderLabels);
-  sliderCorner.addEventListener('input', updateSliderLabels);
 
-  // ── 文件加载 ──
+  // 滑块标签联动
+  function updateLabels() {
+    $('val-tolerance').textContent = sliderTol.value;
+    $('val-feather').textContent = sliderFeath.value;
+  }
+  sliderTol.addEventListener('input', updateLabels);
+  sliderFeath.addEventListener('input', updateLabels);
+
+  // ═══════════ 文件加载 ═══════════
   function loadImage(file) {
     if (!file || !file.type.match(/image\/(jpeg|png)/)) {
       alert('请选择 JPG 或 PNG 图片');
@@ -183,14 +529,10 @@
         sourceImage = img;
         previewOrig.src = e.target.result;
         previewOrig.style.display = 'block';
-        placeholderOrig.style.display = 'none';
+        phOrig.style.display = 'none';
         previewProc.style.display = 'none';
-        placeholderProc.style.display = 'block';
-        previewMask.style.display = 'none';
-        placeholderMask.style.display = 'block';
-        maskRow.style.display = 'none';
+        phProc.style.display = 'block';
         processedURL = null;
-        maskURL = null;
         btnProcess.disabled = false;
         btnDownload.disabled = true;
         $('info-bg-percent').textContent = '—';
@@ -202,9 +544,11 @@
     reader.readAsDataURL(file);
   }
 
-  // ── 拖拽事件 ──
+  // 拖拽事件
   dropZone.addEventListener('click', function() { fileInput.click(); });
-  fileInput.addEventListener('change', function() { if (fileInput.files[0]) loadImage(fileInput.files[0]); });
+  fileInput.addEventListener('change', function() {
+    if (fileInput.files[0]) loadImage(fileInput.files[0]);
+  });
   dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('drag-over'); });
   dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('drag-over'); });
   dropZone.addEventListener('drop', function(e) {
@@ -213,228 +557,241 @@
     if (e.dataTransfer.files[0]) loadImage(e.dataTransfer.files[0]);
   });
 
-  // ── 状态 ──
-  function status(msg) {
-    statusBar.style.display = 'flex';
-    statusText.textContent = msg;
-  }
-
-  function clamp(v, lo, hi) {
-    return v < lo ? lo : v > hi ? hi : v;
-  }
+  // ═══════════════════════════════════════════════════════════
+  //  核心算法
+  // ═══════════════════════════════════════════════════════════
 
   /**
-   * ============================================================
-   * 核心算法：边缘洪水填充去白底 (Flood Fill from Edges)
-   * ============================================================
+   * 从四角采样 + BFS 洪水填充 + 盒式模糊羽化
    *
-   * 原理：
-   *   1. 从图片四个角采样背景参考色（中位数，抗噪）
-   *   2. 从所有边缘像素出发做 BFS 洪水填充
-   *   3. 只有"与边缘相连 且 颜色接近背景色"的像素被标记为透明
-   *   4. 角色身上的白色区域（连衣裙等）因不与边缘连通而被保护
-   *
-   * @param {HTMLImageElement} img  - 已加载的图片元素
-   * @param {number} tolerance       - 颜色容差 (切比雪夫距离)
-   * @param {number} contrast        - 对比度增强系数
-   * @param {number} cornerSize      - 四角采样区域尺寸
-   * @returns {{ dataURL: string, maskURL: string, bgPercent: string, bgColor: string }}
+   * @param {HTMLImageElement} img    - 源图
+   * @param {number} tolerance        - 连通域容差 (RGB 欧氏距离, 0~50)
+   * @param {number} featherRadius    - 羽化半径 (0~20 px)
+   * @returns {{ dataURL:string, bgPercent:string, bgColor:string }}
    */
-  function removeWhiteBg(img, tolerance, contrast, cornerSize) {
-    tolerance  = tolerance  || 40;
-    contrast   = contrast   || 1.05;
-    cornerSize = cornerSize || 8;
+  function removeWhiteBg(img, tolerance, featherRadius) {
+    tolerance      = tolerance      || 25;
+    featherRadius  = featherRadius  || 3;
 
     var w = img.naturalWidth  || img.width;
     var h = img.naturalHeight || img.height;
-    console.log('[Flood Fill] 图片尺寸: ' + w + '×' + h);
-    console.log('[Flood Fill] 参数: tolerance=' + tolerance + ', contrast=' + contrast.toFixed(2) + ', corner=' + cornerSize);
+    console.log('[去底] 图片: ' + w + '×' + h + ' | 容差: ' + tolerance + ' | 羽化: ' + featherRadius + 'px');
 
-    // 1. 绘制到 Canvas
+    // ── 1. 绘制到离屏 Canvas ──
     var cvs = document.createElement('canvas');
     cvs.width  = w;
     cvs.height = h;
     var ctx = cvs.getContext('2d');
     ctx.drawImage(img, 0, 0, w, h);
-
-    // 2. 获取像素数据
     var imageData = ctx.getImageData(0, 0, w, h);
     var data = imageData.data;
     var totalPx = w * h;
 
-    // 3. 对比度增强预处理
-    for (var i = 0; i < data.length; i += 4) {
-      var r = data[i];
-      var g = data[i + 1];
-      var b = data[i + 2];
-      data[i]     = clamp(Math.round((r - 128) * contrast + 128), 0, 255);
-      data[i + 1] = clamp(Math.round((g - 128) * contrast + 128), 0, 255);
-      data[i + 2] = clamp(Math.round((b - 128) * contrast + 128), 0, 255);
+    // ── 2. 四角采样 → 背景参考色 ──
+    var CORNER_SZ = 3;  // 每角采样 3×3 区域
+    var samples = [];
+
+    function sampleCorner(cx, cy) {
+      for (var y = cy; y < cy + CORNER_SZ && y < h; y++) {
+        for (var x = cx; x < cx + CORNER_SZ && x < w; x++) {
+          var i = (y * w + x) * 4;
+          samples.push({ r: data[i], g: data[i+1], b: data[i+2] });
+        }
+      }
     }
 
-    // 4. 四角采样背景色
-    var samples = [];
-    var corners = [
+    sampleCorner(0, 0);                         // 左上
+    sampleCorner(w - CORNER_SZ, 0);             // 右上
+    sampleCorner(0, h - CORNER_SZ);             // 左下
+    sampleCorner(w - CORNER_SZ, h - CORNER_SZ); // 右下
+
+    // 按亮度排序取中位数（抗噪声）
+    samples.sort(function(a, b) {
+      return (0.299*a.r + 0.587*a.g + 0.114*a.b) -
+             (0.299*b.r + 0.587*b.g + 0.114*b.b);
+    });
+    var bgRef = samples[Math.floor(samples.length / 2)];
+
+    console.log('[去底] 背景参考色: RGB(' + bgRef.r + ', ' + bgRef.g + ', ' + bgRef.b + ')');
+
+    // ── 3. BFS 洪水填充 ──
+    var mask = new Uint8Array(totalPx);   // 1=背景(待剔除)
+    var visited = new Uint8Array(totalPx);
+    var queue = [];
+
+    // 判据：欧氏距离
+    function isBackground(x, y) {
+      var i = (y * w + x) * 4;
+      var dr = data[i]     - bgRef.r;
+      var dg = data[i + 1] - bgRef.g;
+      var db = data[i + 2] - bgRef.b;
+      return Math.sqrt(dr*dr + dg*dg + db*db) <= tolerance;
+    }
+
+    // BFS 种子：仅从四个角像素出发
+    var seeds = [
       [0, 0],
-      [w - cornerSize, 0],
-      [0, h - cornerSize],
-      [w - cornerSize, h - cornerSize]
+      [w - 1, 0],
+      [0, h - 1],
+      [w - 1, h - 1]
     ];
 
-    for (var ci = 0; ci < corners.length; ci++) {
-      var cx = corners[ci][0];
-      var cy = corners[ci][1];
-      for (var y = cy; y < cy + cornerSize && y < h; y++) {
-        for (var x = cx; x < cx + cornerSize && x < w; x++) {
-          var idx = (y * w + x) * 4;
-          samples.push({
-            r: data[idx],
-            g: data[idx + 1],
-            b: data[idx + 2]
-          });
-        }
+    for (var si = 0; si < seeds.length; si++) {
+      var sx = seeds[si][0];
+      var sy = seeds[si][1];
+      var sk = sy * w + sx;
+      if (!visited[sk] && isBackground(sx, sy)) {
+        visited[sk] = 1;
+        mask[sk] = 1;
+        queue.push(sk);
       }
     }
 
-    // 按亮度排序取中位数
-    samples.sort(function(a, b) {
-      return (0.299 * a.r + 0.587 * a.g + 0.114 * a.b) -
-             (0.299 * b.r + 0.587 * b.g + 0.114 * b.b);
-    });
-    var bg = samples[Math.floor(samples.length / 2)];
+    console.log('[去底] BFS 种子: ' + queue.length + ' 个角像素');
 
-    console.log('[Flood Fill] 背景色: RGB(' + bg.r + ', ' + bg.g + ', ' + bg.b + ')');
-
-    // 5. BFS 洪水填充
-    var mask   = new Uint8Array(totalPx);  // 1 = 背景
-    var visited = new Uint8Array(totalPx);
-    var queue  = [];
-
-    function pixIdx(x, y) { return y * w + x; }
-
-    function isBg(x, y) {
-      var i = (y * w + x) * 4;
-      return Math.max(
-        Math.abs(data[i] - bg.r),
-        Math.abs(data[i + 1] - bg.g),
-        Math.abs(data[i + 2] - bg.b)
-      ) <= tolerance;
-    }
-
-    // 初始化队列：遍历四条边
-    for (var x = 0; x < w; x++) {
-      if (isBg(x, 0))          { var k0 = pixIdx(x, 0);          if (!visited[k0]) { visited[k0] = 1; queue.push([x, 0]); } }
-      if (isBg(x, h - 1))      { var k1 = pixIdx(x, h - 1);      if (!visited[k1]) { visited[k1] = 1; queue.push([x, h - 1]); } }
-    }
-    for (var y = 1; y < h - 1; y++) {
-      if (isBg(0, y))          { var kl = pixIdx(0, y);          if (!visited[kl]) { visited[kl] = 1; queue.push([0, y]); } }
-      if (isBg(w - 1, y))      { var kr = pixIdx(w - 1, y);      if (!visited[kr]) { visited[kr] = 1; queue.push([w - 1, y]); } }
-    }
-
-    console.log('[Flood Fill] BFS 起点: ' + queue.length + ' 个边缘像素');
-
-    var dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+    // 4-direction BFS
+    var dirs = [1, -1, w, -w];  // 右、左、下、上（1D 偏移）
     var head = 0;
+
     while (head < queue.length) {
-      var cur = queue[head++];
-      var qx = cur[0], qy = cur[1];
-      mask[pixIdx(qx, qy)] = 1;
+      var idx = queue[head++];
+      var qx = idx % w;
+      var qy = (idx / w) | 0;
 
       for (var d = 0; d < 4; d++) {
-        var nx = qx + dirs[d][0];
-        var ny = qy + dirs[d][1];
+        var nx, ny;
+        if (d === 0)      { nx = qx + 1; ny = qy; }
+        else if (d === 1) { nx = qx - 1; ny = qy; }
+        else if (d === 2) { nx = qx;     ny = qy + 1; }
+        else              { nx = qx;     ny = qy - 1; }
+
         if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-        var nk = pixIdx(nx, ny);
+        var nk = ny * w + nx;
         if (visited[nk]) continue;
         visited[nk] = 1;
-        if (isBg(nx, ny)) {
-          queue.push([nx, ny]);
+        if (isBackground(nx, ny)) {
+          mask[nk] = 1;
+          queue.push(nk);
         }
       }
     }
 
-    // 6. 计算统计
+    // 统计
     var bgPixels = 0;
-    for (var mi = 0; mi < totalPx; mi++) { if (mask[mi] === 1) bgPixels++; }
+    for (var mi = 0; mi < totalPx; mi++) { if (mask[mi]) bgPixels++; }
     var bgPercent = ((bgPixels / totalPx) * 100).toFixed(1);
-    console.log('[Flood Fill] 背景像素: ' + bgPixels + ' (' + bgPercent + '%)');
+    console.log('[去底] 背景像素: ' + bgPixels + ' / ' + totalPx + ' (' + bgPercent + '%)');
 
-    // 7. 应用 mask → Alpha=0
-    for (var mi2 = 0; mi2 < totalPx; mi2++) {
-      if (mask[mi2] === 1) {
-        data[mi2 * 4 + 3] = 0;
+    // ── 4. 盒式模糊羽化 ──
+    var alphaMask;
+    if (featherRadius > 0) {
+      alphaMask = boxBlurMask(mask, w, h, featherRadius);
+    } else {
+      // 无羽化：直接用二值 mask
+      alphaMask = new Float32Array(totalPx);
+      for (var fi = 0; fi < totalPx; fi++) {
+        alphaMask[fi] = mask[fi];
       }
+    }
+
+    // ── 5. 应用 Alpha 通道 ──
+    for (var ai = 0; ai < totalPx; ai++) {
+      // alphaMask: 1 = 纯背景, 0 = 纯前景, 中间值 = 过渡
+      data[ai * 4 + 3] = Math.round((1 - alphaMask[ai]) * 255);
     }
     ctx.putImageData(imageData, 0, 0);
 
-    // 8. 生成遮罩预览图
-    var maskCvs = document.createElement('canvas');
-    maskCvs.width  = w;
-    maskCvs.height = h;
-    var maskCtx = maskCvs.getContext('2d');
-    var maskImageData = maskCtx.createImageData(w, h);
-    var maskData = maskImageData.data;
-    for (var mi3 = 0; mi3 < totalPx; mi3++) {
-      if (mask[mi3] === 1) {
-        maskData[mi3 * 4]     = 255;
-        maskData[mi3 * 4 + 1] = 0;
-        maskData[mi3 * 4 + 2] = 0;
-        maskData[mi3 * 4 + 3] = 180;
-      } else {
-        maskData[mi3 * 4 + 3] = 0;
-      }
-    }
-    maskCtx.putImageData(maskImageData, 0, 0);
-
-    console.log('[Flood Fill] 完成！白连衣裙等前景白色物体已被保护。');
+    console.log('[去底] 完成 ✓');
 
     return {
       dataURL: cvs.toDataURL('image/png'),
-      maskURL: maskCvs.toDataURL('image/png'),
       bgPercent: bgPercent,
-      bgColor: 'RGB(' + bg.r + ', ' + bg.g + ', ' + bg.b + ')'
+      bgColor: 'RGB(' + bgRef.r + ', ' + bgRef.g + ', ' + bgRef.b + ')'
     };
   }
 
-  // ── 执行处理 ──
+  /**
+   * 可分离盒式模糊（水平→垂直两趟扫描，O(w·h)）
+   * 仅在 mask=1（背景）像素上做模糊，保持前景硬边
+   */
+  function boxBlurMask(mask, w, h, radius) {
+    var src = new Float32Array(w * h);
+    for (var i = 0; i < mask.length; i++) {
+      src[i] = mask[i];
+    }
+    var tmp = new Float32Array(w * h);
+
+    // ── 水平趟 ──
+    for (var y = 0; y < h; y++) {
+      var rowBase = y * w;
+      // 用滑动窗口
+      var sum = 0, cnt = 0;
+      for (var dx = 0; dx <= radius && dx < w; dx++) {
+        sum += src[rowBase + dx]; cnt++;
+      }
+      tmp[rowBase] = cnt > 0 ? sum / cnt : 0;
+
+      for (var x = 1; x < w; x++) {
+        var leftOut = x - radius - 1;
+        if (leftOut >= 0) { sum -= src[rowBase + leftOut]; cnt--; }
+        var rightIn = x + radius;
+        if (rightIn < w)  { sum += src[rowBase + rightIn]; cnt++; }
+        tmp[rowBase + x] = cnt > 0 ? sum / cnt : 0;
+      }
+    }
+
+    // ── 垂直趟 ──
+    var dst = new Float32Array(w * h);
+    for (var x = 0; x < w; x++) {
+      var sum = 0, cnt = 0;
+      for (var dy = 0; dy <= radius && dy < h; dy++) {
+        sum += tmp[dy * w + x]; cnt++;
+      }
+      dst[x] = cnt > 0 ? sum / cnt : 0;
+
+      for (var y = 1; y < h; y++) {
+        var topOut = y - radius - 1;
+        if (topOut >= 0) { sum -= tmp[topOut * w + x]; cnt--; }
+        var botIn = y + radius;
+        if (botIn < h)  { sum += tmp[botIn * w + x]; cnt++; }
+        dst[y * w + x] = cnt > 0 ? sum / cnt : 0;
+      }
+    }
+
+    return dst;
+  }
+
+  // ═══════════ 按钮事件 ═══════════
+
+  // 执行去底
   btnProcess.addEventListener('click', function() {
     if (!sourceImage) return;
 
-    var tolerance  = parseInt(sliderTolerance.value, 10);
-    var contrast   = parseFloat(sliderContrast.value);
-    var cornerSize = parseInt(sliderCorner.value, 10);
+    var tolerance     = parseInt(sliderTol.value, 10);
+    var featherRadius = parseInt(sliderFeath.value, 10);
 
     status('处理中…');
-    console.log('══════════════════════════════════════');
-    console.log('[Flood Fill] 开始处理…');
 
-    // 使用 setTimeout 避免阻塞 UI
     setTimeout(function() {
-      var startTime = performance.now();
-      var result = removeWhiteBg(sourceImage, tolerance, contrast, cornerSize);
-      var elapsed = (performance.now() - startTime).toFixed(0);
+      var t0 = performance.now();
+      var result = removeWhiteBg(sourceImage, tolerance, featherRadius);
+      var elapsed = (performance.now() - t0).toFixed(0);
 
       processedURL = result.dataURL;
-      maskURL = result.maskURL;
 
       previewProc.src = processedURL;
       previewProc.style.display = 'block';
-      placeholderProc.style.display = 'none';
-
-      previewMask.src = maskURL;
-      previewMask.style.display = 'block';
-      placeholderMask.style.display = 'none';
-      maskRow.style.display = 'flex';
+      phProc.style.display = 'none';
 
       btnDownload.disabled = false;
       $('info-bg-percent').textContent = result.bgPercent + '%';
       $('info-bg-color').textContent = result.bgColor;
 
-      status('处理完成 (' + elapsed + 'ms) — 红色遮罩 = 已剥离的背景区域');
+      status('处理完成 (' + elapsed + 'ms) — 仅移除了与四角连通的背景区域');
     }, 50);
   });
 
-  // ── 下载 ──
+  // 下载 PNG
   btnDownload.addEventListener('click', function() {
     if (!processedURL) return;
     var a = document.createElement('a');
@@ -446,21 +803,16 @@
     status('已下载 sprite_no_bg.png');
   });
 
-  // ── 重置 ──
+  // 重置
   btnReset.addEventListener('click', function() {
     sourceImage = null;
     processedURL = null;
-    maskURL = null;
     previewOrig.src = '';
     previewOrig.style.display = 'none';
-    placeholderOrig.style.display = 'block';
+    phOrig.style.display = 'block';
     previewProc.src = '';
     previewProc.style.display = 'none';
-    placeholderProc.style.display = 'block';
-    previewMask.src = '';
-    previewMask.style.display = 'none';
-    placeholderMask.style.display = 'block';
-    maskRow.style.display = 'none';
+    phProc.style.display = 'block';
     btnProcess.disabled = true;
     btnDownload.disabled = true;
     fileInput.value = '';
@@ -470,31 +822,11 @@
     console.clear();
   });
 
-  // ── 初始化：从 URL 参数加载 image/ 文件夹下的图片 ──
-  (function initFromQuery() {
-    var q = new URLSearchParams(window.location.search);
-    var file = q.get('file');
-    if (file) {
-      var img = new Image();
-      img.onload = function() {
-        sourceImage = img;
-        previewOrig.src = 'image/' + file;
-        previewOrig.style.display = 'block';
-        placeholderOrig.style.display = 'none';
-        btnProcess.disabled = false;
-        status('已加载: image/' + file + ' (' + img.naturalWidth + '×' + img.naturalHeight + ')');
-      };
-      img.onerror = function() {
-        console.warn('无法加载 image/' + file + '，请通过拖拽上传或确认文件存在');
-      };
-      img.src = 'image/' + file;
-    }
-  })();
-
-  updateSliderLabels();
-  console.log('💡 去底工具就绪 — 边缘洪水填充 (Flood Fill) 算法');
-  console.log('   用法：拖拽图片 / 点击选择 / ?file=normal.jpg 加载 image/ 目录文件');
-  console.log('   红色遮罩区域 = 被标记为背景（将变为透明），白色连衣裙等前景物体不受影响');
+  // ═══════════ 初始化 ═══════════
+  updateLabels();
+  console.log('🧼 立绘去白底工具就绪');
+  console.log('   四角采样 → BFS 洪水填充 → 盒式模糊羽化');
+  console.log('   白裙子、白皮肤等不与四角连通的前景区域不会被误删');
 })();
 </script>
 </body>
