@@ -212,7 +212,7 @@
     box-shadow: 0 0 0 8px rgba(99,102,241,0.06);
     transform: scale(1.01);
   }
-  .drop-zone .icon { font-size: 2.2rem; opacity: 0.45; transition: opacity 0.2s; }
+  .drop-zone .icon { width: 64px; height: 64px; opacity: 0.45; transition: opacity 0.2s; object-fit: contain; }
   .drop-zone:hover .icon { opacity: 0.7; }
   .drop-zone span { font-size: 0.84rem; color: var(--text-dim); pointer-events: none; }
   .drop-zone .sub { font-size: 0.72rem; color: var(--text-soft); }
@@ -281,7 +281,7 @@
 <div class="app-container">
 
   <div class="app-header">
-    <h1>🧼 立绘去白底 <span class="badge">Alpha Gaussian</span></h1>
+    <h1><img src="./Image/alice-dark.gif" alt="icon" style="width:28px;height:28px;vertical-align:middle;border-radius:5px;object-fit:contain;"> 立绘去白底 <span class="badge">Alpha Gaussian</span></h1>
   </div>
   <p>
     从图片<strong>四角</strong>采样背景色，做连通域洪水填充。<br>
@@ -339,7 +339,9 @@
 
     <div class="preview-panel">
       <div class="drop-zone" id="drop-zone">
-        <span class="icon">📁</span>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#6b7280;">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v12z"/>
+        </svg>
         <span>拖拽立绘到此处，或点击选择文件</span>
         <span class="sub">JPG / PNG · 只剥离与四角连通的背景区域</span>
       </div>
